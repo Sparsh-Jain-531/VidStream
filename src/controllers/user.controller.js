@@ -129,7 +129,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
 const logoutUser = asyncHandler(async (req, res) => {
   await User.findByIdAndUpdate(
-    req.user._id,
+    req.user?._id,
     {
       $unset: {
         refreshToken: 1,
@@ -169,16 +169,16 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     if (user.refreshToken !== incomingRefreshToken) {
       throw new ApiError(400, "Invalid refresh token");
     }
-  
+
     const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
       user._id
     );
-  
+
     const options = {
       httpOnly: true,
       secure: true,
     };
-  
+
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
@@ -191,8 +191,131 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       );
   } catch (error) {
     throw new ApiError(400, error?.message || "Invalid refresh token");
-    
   }
 });
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword, confirmNewPassword } = req.body;
+
+  if (!oldPassword || !newPassword || !confirmNewPassword) {
+    throw new ApiError(400, "Please fill all the fields");
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    throw new ApiError(400, "New password and confirm password does not match");
+  }
+
+  const user = await User.findById(req.user?._id);
+  const checkPassword = await user.comparePassword(oldPassword);
+
+  if (!checkPassword) {
+    throw new ApiError(400, "Invalid old password");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Password changed successfully", {}));
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "User Data Fetched successfully", req.user));
+});
+
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  const { fullName, email, username } = req.body;
+
+  if (!fullName || !email || !username) {
+    throw new ApiError(400, "Please fill all the fields");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        fullName,
+        email,
+        username,
+      },
+    },
+    {
+      new: true,
+    }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Account details updated successfully", user));
+});
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.file?.path;
+  if (!avatarLocalPath) {
+    throw new ApiError(400, "Please upload avatar image");
+  }
+
+  const avatar = await uploadOnCloudinary(avatarLocalPath);
+  if (!avatar.url) {
+    throw new ApiError(400, "Failed to upload Avatar image");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        avatar: avatar.url,
+      },
+    },
+    {
+      new: true,
+    }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Avatar updated successfully", user));
+});
+
+const updateUserCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
+  if (!coverImageLocalPath) {
+    throw new ApiError(400, "Please upload cover image");
+  }
+
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
+  if (!coverImage.url) {
+    throw new ApiError(400, "Failed to upload cover image");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        coverImage: coverImage.url,
+      },
+    },
+    {
+      new: true,
+    }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Cover image updated successfully", user));
+});
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  getCurrentUser,
+  updateAccountDetails,
+  updateUserAvatar,
+  updateUserCoverImage,
+};
